@@ -1,0 +1,9 @@
+{
+  "name": "book-collector",
+  "private": true,
+  "description": "Mi Estante: registro de libros con escáner de ISBN. Web estática, sin dependencias.",
+  "scripts": {
+    "test": "node --test tests/*.test.js",
+    "start": "python3 -m http.server 8000"
+  }
+}

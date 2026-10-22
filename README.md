@@ -15,7 +15,8 @@ Funciona en el navegador del móvil, sin cuenta y sin instalar nada de una tiend
 - **Escanear tu estantería.** Para empezar, vas pasando los libros que tienes en casa por la cámara y se
   añaden solos, uno detrás de otro.
 - **Libros que no aparecen por su ISBN.** Escribes dos o tres palabras del título y eliges su portada; se
-  rellenan título, autor y portada, y el libro conserva el ISBN que escaneaste.
+  rellenan título, autor y portada, y el libro conserva el ISBN que escaneaste. Si no aparece en ningún
+  catálogo, escribes el título y haces una **foto de la portada** con el móvil.
 - **Buscar por título o autor**, o escribir la ficha a mano para libros sin ISBN.
 - **Ficha de cada libro:** lo tengo, lo he leído, lista de deseos, valoración, fecha y notas.
 - **Sin conexión.** La comprobación por ISBN funciona sin cobertura. Los libros añadidos sin conexión
@@ -43,7 +44,8 @@ tienda de Apple Books, ambas gratis y sin claves ni cuentas. El código de barra
 
 En una prueba con 40 novedades y más vendidos de librerías españolas (octubre de 2026), Open Library
 reconocía el ISBN de 16; con la búsqueda por título se encuentran 31. Los que faltan suelen ser álbumes
-infantiles, libros en catalán o de editoriales pequeñas sin edición electrónica: esos se escriben a mano.
+infantiles, libros en catalán o de editoriales pequeñas sin edición electrónica: esos se escriben a mano y
+se les hace una foto de la portada.
 
 ## Desarrollo
 

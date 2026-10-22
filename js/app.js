@@ -167,16 +167,24 @@
   }
 
   // Search box + covers to tap. Used for ISBNs nobody knows and for books saved without a title.
+  // What to do when the book is in no catalogue: type it and photograph the cover.
+  function notListed(ctx) {
+    return ctx === "sheet"
+      ? `<div class="banner"><strong>¿No aparece?</strong> Escribe el título y el autor abajo y haz una foto de la portada.
+          <div class="row"><button type="button" class="btn small" data-act="cover-photo">Hacer foto de la portada</button></div></div>`
+      : `<p class="note"><strong>¿No aparece?</strong> Pulsa abajo «Lo he comprado», «Ya lo leí» o «Lo quiero»: en la ficha podrás escribir el título y hacer una foto de la portada.</p>`;
+  }
+
   function pickerHTML(label) {
     const p = S.picker;
     let body = "";
     if (p.phase === "loading") body = `<p class="loading">Buscando en Open Library y Apple Books</p>`;
     else if (p.phase === "offline") body = `<p class="note">Sin conexión. Prueba otra vez cuando tengas cobertura.</p>`;
-    else if (p.phase === "done" && !p.results.length) body = `<p class="note">Nada con esas palabras. Prueba con otras o añade el autor.</p>`;
+    else if (p.phase === "done" && !p.results.length) body = `<p class="note">Nada con esas palabras. Prueba con otras o añade el autor.</p>${notListed(p.ctx)}`;
     else if (p.phase === "done") {
       body = `<div class="picks">${p.results.map((r, i) => `<button type="button" class="pick" data-act="pick-fill" data-i="${i}">
           ${cover(r, true)}<span class="pt">${esc(r.title)}</span><span class="pa">${esc(r.author)}${r.year ? " · " + esc(r.year) : ""}</span></button>`).join("")}</div>
-        <p class="note">Toca el que coincide con tu libro. Si no está, prueba con otras palabras o escribe la ficha a mano.</p>`;
+        <p class="note">Toca el que coincide con tu libro. Si no está, prueba con otras palabras.</p>${notListed(p.ctx)}`;
     }
     return `<div class="picker">
       <label class="field" for="pickq">${label}</label>
@@ -389,7 +397,8 @@
         <button type="button" class="btn small ghost" data-act="close">Cerrar</button></div>
       <div class="sheet-cover">${cover(d, false)}
         <div class="row">${Scanner.canUseCamera() ? `<button type="button" class="btn small" data-act="fill-scan">Rellenar escaneando el ISBN</button>` : ""}
-          ${S.picker && S.picker.ctx === "sheet" ? "" : `<button type="button" class="btn small" data-act="pick-open">Buscar título y portada</button>`}</div></div>
+          ${S.picker && S.picker.ctx === "sheet" ? "" : `<button type="button" class="btn small" data-act="pick-open">Buscar título y portada</button>`}
+          <button type="button" class="btn small" data-act="cover-photo">${d.cover && d.cover.startsWith("data:") ? "Repetir la foto de la portada" : "Hacer foto de la portada"}</button></div></div>
       ${S.picker && S.picker.ctx === "sheet" ? pickerHTML(isbnOnly(d) || !d.title ? "Este libro no tiene título. Escribe unas palabras del título o el autor" : "Escribe unas palabras del título o el autor") : ""}
       <label class="field" for="s-title">Título<input type="text" id="s-title" name="title" value="${esc(d.title)}" required></label>
       <label class="field" for="s-author">Autor<input type="text" id="s-author" name="author" value="${esc(d.author)}"></label>
@@ -538,6 +547,29 @@
     } catch { toast("Sin conexión. Guarda el ISBN y completa el resto después."); }
   }
 
+  /* ---------- cover photo ---------- */
+  // Shrinks a photo of the cover to about 320×480 px (some 30 KB as JPEG) so it fits in the library and
+  // in the export file. Browsers already turn photos upright from their camera orientation.
+  async function photoToCover(file) {
+    const url = URL.createObjectURL(file);
+    try {
+      const img = await new Promise((resolve, reject) => {
+        const i = new Image();
+        i.onload = () => resolve(i);
+        i.onerror = reject;
+        i.src = url;
+      });
+      const scale = Math.min(1, 480 / Math.max(img.naturalWidth, img.naturalHeight));
+      const c = document.createElement("canvas");
+      c.width = Math.round(img.naturalWidth * scale);
+      c.height = Math.round(img.naturalHeight * scale);
+      c.getContext("2d").drawImage(img, 0, 0, c.width, c.height);
+      return c.toDataURL("image/jpeg", 0.75);
+    } finally {
+      URL.revokeObjectURL(url);
+    }
+  }
+
   /* ---------- backup ---------- */
   function backupFile() {
     const data = JSON.stringify({ app: "mi-estante", version: 1, exportedAt: new Date().toISOString(), books: S.books }, null, 1);
@@ -595,6 +627,7 @@
       case "photo-code": $("#photo-code").click(); break;
       case "check-isbn": checkIsbn(t.dataset.isbn); break;
       case "isbn-open": openIsbnEntry(); break;
+      case "cover-photo": readSheet(); $("#cover-file").click(); break;
       case "isbn-go": submitIsbnEntry(); break;
       case "isbn-close": S.isbnEntry = null; render(); break;
       case "isbn-x": { const el = $("#isbnq"); el.value += "X"; el.dispatchEvent(new Event("input", { bubbles: true })); el.focus(); break; }
@@ -754,6 +787,22 @@
       else toast(text ? "Ese código no es un ISBN." : "No encuentro un código de barras en la foto. Acércate más y que salga recto.");
     }
     if (id === "import-file") { const f = ev.target.files[0]; ev.target.value = ""; if (f) importFile(f); }
+    if (id === "cover-file") {
+      const f = ev.target.files[0];
+      ev.target.value = "";
+      if (!f || !S.sheet) return;
+      try {
+        const dataUrl = await photoToCover(f);
+        if (!S.sheet) return;
+        readSheet();
+        S.sheet.data.cover = dataUrl;
+        if (S.picker && S.picker.ctx === "sheet") S.picker = null;
+        renderSheet();
+        toast("Portada puesta. Pulsa Guardar para conservarla.");
+      } catch {
+        toast("No se pudo usar esa foto. Prueba a hacerla otra vez.");
+      }
+    }
   });
   document.addEventListener("keydown", (ev) => {
     if (ev.key === "Enter" && ev.target.id === "isbnq") { ev.preventDefault(); submitIsbnEntry(); return; }

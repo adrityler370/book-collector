@@ -8,6 +8,7 @@
     view: "scan", filter: "all", q: "", sort: "recent", quick: "",
     scan: null,      // last scanned book: {isbn, phase: 'looking'|'done'|'unknown'|'offline', info, match, by, fresh}
     search: { q: "", phase: "idle", results: [] }, // online search on the Add screen
+    picker: null,    // title search that fills in a book: {ctx: 'scan'|'sheet', q, phase: 'idle'|'loading'|'done'|'offline', results}
     sheet: null,     // book form: {mode: 'new'|'edit', id, data, armed}
     scanMode: null,  // 'check' | 'bulk' | 'fill' while the camera is open
     bulk: null,      // {count, last, log: []}
@@ -96,6 +97,7 @@
       (b.read ? `<span class="stamp ok${f}">✓ Leído</span>` : `<span class="stamp warn${f}">Sin leer</span>`) +
       (b.wish && !b.owned ? `<span class="stamp wish${f}">En tu lista de deseos</span>` : "");
   }
+  const isbnOnly = (b) => !!b && /^ISBN \d/.test(b.title || "");
   const metaLine = (o) => [o.year, o.publisher, o.isbn ? "ISBN " + o.isbn : ""].filter(Boolean).map(esc).join(" · ");
   function itemRow(b) {
     return `<button type="button" class="item" data-act="open" data-id="${esc(b.id)}">
@@ -114,10 +116,11 @@
     const active = document.activeElement && document.activeElement.id;
     const caret = active && document.activeElement.selectionStart;
     $("#view").innerHTML = S.view === "scan" ? scanView() : S.view === "library" ? libraryView() : S.view === "add" ? addView() : moreView();
-    if (active && ["quick", "libq", "netq"].includes(active)) {
+    if (active && ["quick", "libq", "netq", "pickq"].includes(active)) {
       const el = document.getElementById(active);
       if (el) { el.focus(); try { el.setSelectionRange(caret, caret); } catch { /* not a text input */ } }
     }
+    readSheet(); // keep what is being typed in an open book form when the screen behind it redraws
     renderSheet();
   }
   function renderStats() {
@@ -128,6 +131,25 @@
   }
 
   const barcodeIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M7.5 8v8M10 8v8M12 8v8M14.5 8v8M16.5 8v8"/></svg>`;
+
+  // Search box + covers to tap. Used for ISBNs nobody knows and for books saved without a title.
+  function pickerHTML(label) {
+    const p = S.picker;
+    let body = "";
+    if (p.phase === "loading") body = `<p class="loading">Buscando en Open Library y Apple Books</p>`;
+    else if (p.phase === "offline") body = `<p class="note">Sin conexión. Prueba otra vez cuando tengas cobertura.</p>`;
+    else if (p.phase === "done" && !p.results.length) body = `<p class="note">Nada con esas palabras. Prueba con otras o añade el autor.</p>`;
+    else if (p.phase === "done") {
+      body = `<div class="picks">${p.results.map((r, i) => `<button type="button" class="pick" data-act="pick-fill" data-i="${i}">
+          ${cover(r, true)}<span class="pt">${esc(r.title)}</span><span class="pa">${esc(r.author)}${r.year ? " · " + esc(r.year) : ""}</span></button>`).join("")}</div>
+        <p class="note">Toca el que coincide con tu libro. Si no está, prueba con otras palabras o escribe la ficha a mano.</p>`;
+    }
+    return `<div class="picker">
+      <label class="field" for="pickq">${label}</label>
+      <div class="searchbar"><input type="search" id="pickq" value="${esc(p.q)}" placeholder="Ej.: los huérfanos mola" autocomplete="off" enterkeyhint="search">
+        <button type="button" class="btn" data-act="pick-go">Buscar</button></div>
+      ${body}</div>`;
+  }
 
   function scanView() {
     let html = S.scan ? scanResult(S.scan) : "";
@@ -163,7 +185,11 @@
     const lines = [];
     if (sc.phase === "looking") lines.push(`<p class="loading">Buscando los datos del libro</p>`);
     if (sc.phase === "offline") lines.push(`<p class="note">Sin conexión: no he podido buscar el título. ${m ? "Lo de arriba sale de tu estante." : "En tu estante no hay ningún libro con este ISBN."}</p>`);
-    if (sc.phase === "unknown") lines.push(`<p class="note">Este ISBN no aparece en Open Library ni en Google Books. Si lo añades, escribe el título a mano.</p>`);
+    if (sc.phase === "unknown" && (!m || isbnOnly(m))) {
+      lines.push(`<p class="note">No encuentro el título de este ISBN en Open Library.</p>`);
+      if (S.picker && S.picker.ctx === "scan") lines.push(pickerHTML("Escribe unas palabras del título y elige su portada"));
+      lines.push(`<div class="row"><a class="btn small ghost" href="https://books.google.es/books?vid=ISBN${sc.isbn}" target="_blank" rel="noopener">Ver este ISBN en Google Libros ↗</a></div>`);
+    }
     if (m && sc.by === "title") lines.push(`<p class="note">Tienes otra edición: «${esc(m.title)}»${m.isbn ? ` (ISBN ${esc(m.isbn)})` : ""}.</p>`);
     let actions = "";
     if (!m) {
@@ -193,6 +219,7 @@
       if (S.filter === "read" && !b.read) return false;
       if (S.filter === "pending" && !(b.owned && !b.read)) return false;
       if (S.filter === "wish" && !(b.wish && !b.owned)) return false;
+      if (S.filter === "nodata" && !isbnOnly(b)) return false;
       return !q || L.norm(`${b.title} ${b.author || ""} ${b.isbn || ""}`).includes(q);
     });
     const byTitle = (a, b) => L.norm(a.title).localeCompare(L.norm(b.title));
@@ -205,7 +232,7 @@
   function libraryView() {
     if (!S.ready) return `<div class="empty"><span class="big">Abriendo tu estante…</span></div>`;
     const n = (f) => S.books.filter(f).length;
-    const counts = { all: S.books.length, owned: n((b) => b.owned), read: n((b) => b.read), pending: n((b) => b.owned && !b.read), wish: n((b) => b.wish && !b.owned) };
+    const counts = { all: S.books.length, owned: n((b) => b.owned), read: n((b) => b.read), pending: n((b) => b.owned && !b.read), wish: n((b) => b.wish && !b.owned), nodata: n(isbnOnly) };
     const chip = (k, label) => `<button type="button" class="chip" data-act="filter" data-f="${k}" aria-pressed="${S.filter === k}">${label} ${counts[k]}</button>`;
     const list = filtered();
     let body;
@@ -221,9 +248,10 @@
     const opt = (v, l) => `<option value="${v}"${S.sort === v ? " selected" : ""}>${l}</option>`;
     return `<section class="toolbar">
         <input type="search" id="libq" placeholder="Buscar por título, autor o ISBN" value="${esc(S.q)}" autocomplete="off" aria-label="Buscar en tu estante">
-        <div class="chips">${chip("all", "Todos")}${chip("owned", "En el estante")}${chip("read", "Leídos")}${chip("pending", "Pendientes")}${chip("wish", "Deseos")}</div>
+        <div class="chips">${chip("all", "Todos")}${chip("owned", "En el estante")}${chip("read", "Leídos")}${chip("pending", "Pendientes")}${chip("wish", "Deseos")}${counts.nodata || S.filter === "nodata" ? chip("nodata", "Sin título") : ""}</div>
         <div class="sortline"><span>${list.length} ${list.length === 1 ? "libro" : "libros"}</span>
           <label>Ordenar <select id="sort">${opt("recent", "Recientes")}${opt("title", "Título")}${opt("author", "Autor")}</select></label></div>
+        ${counts.nodata ? `<div class="banner"><strong>${counts.nodata} ${counts.nodata === 1 ? "libro sin título" : "libros sin título"}.</strong> Ábrelos y escribe unas palabras del título para completarlos.</div>` : ""}
       </section>
       <section>${body}</section>`;
   }
@@ -231,7 +259,7 @@
   function addView() {
     const s = S.search;
     let results = "";
-    if (s.phase === "loading") results = `<p class="loading">Buscando en Open Library</p>`;
+    if (s.phase === "loading") results = `<p class="loading">Buscando en Open Library y Apple Books</p>`;
     else if (s.phase === "offline") results = `<p class="note">Sin conexión. Prueba más tarde o añádelo a mano.</p>`;
     else if (s.phase === "done" && !s.results.length) results = `<p class="note">No he encontrado nada. Prueba con menos palabras o añádelo a mano.</p>`;
     else if (s.phase === "done") {
@@ -288,17 +316,23 @@
       </section>
       <section class="card flat">
         <h3>Acerca de</h3>
-        <p class="note">Los datos de los libros vienen de <a href="https://openlibrary.org" target="_blank" rel="noopener">Open Library</a> y Google Books. El código de barras se lee en el propio móvil; las fotos no salen de él.</p>
+        <p class="note">Los datos de los libros vienen de <a href="https://openlibrary.org" target="_blank" rel="noopener">Open Library</a> y de la tienda de Apple Books, sin claves ni cuentas. El código de barras se lee en el propio móvil; las fotos no salen de él.</p>
       </section>`;
   }
 
   /* ---------- book form ---------- */
   function openSheet(mode, data, id) {
     S.sheet = { mode, id: id || null, armed: false, data: { title: "", author: "", isbn: "", year: "", publisher: "", pages: null, cover: "", owned: true, read: false, wish: false, rating: 0, readDate: "", notes: "", ...data } };
+    const d = S.sheet.data;
+    S.picker = mode === "edit" && (!d.title || isbnOnly(d)) ? { ctx: "sheet", q: "", phase: "idle", results: [] } : null;
     renderSheet();
     setTimeout(() => { const t = $("#s-title"); if (t && !t.value) t.focus(); }, 60);
   }
-  function closeSheet() { S.sheet = null; renderSheet(); }
+  function closeSheet() {
+    S.sheet = null;
+    if (S.picker && S.picker.ctx === "sheet") S.picker = null;
+    renderSheet();
+  }
   function dupWarning(d) {
     if (S.sheet.mode !== "new") return "";
     const m = L.findMatch(S.books, d);
@@ -315,7 +349,9 @@
       <div class="sheet-head"><h2 id="sheet-h">${sh.mode === "new" ? "Nuevo libro" : "Ficha del libro"}</h2>
         <button type="button" class="btn small ghost" data-act="close">Cerrar</button></div>
       <div class="sheet-cover">${cover(d, false)}
-        ${Scanner.canUseCamera() ? `<button type="button" class="btn small" data-act="fill-scan">Rellenar escaneando el ISBN</button>` : ""}</div>
+        <div class="row">${Scanner.canUseCamera() ? `<button type="button" class="btn small" data-act="fill-scan">Rellenar escaneando el ISBN</button>` : ""}
+          ${S.picker && S.picker.ctx === "sheet" ? "" : `<button type="button" class="btn small" data-act="pick-open">Buscar título y portada</button>`}</div></div>
+      ${S.picker && S.picker.ctx === "sheet" ? pickerHTML(isbnOnly(d) || !d.title ? "Este libro no tiene título. Escribe unas palabras del título o el autor" : "Escribe unas palabras del título o el autor") : ""}
       <label class="field" for="s-title">Título<input type="text" id="s-title" name="title" value="${esc(d.title)}" required></label>
       <label class="field" for="s-author">Autor<input type="text" id="s-author" name="author" value="${esc(d.author)}"></label>
       <div class="grid2">
@@ -394,6 +430,7 @@
     const local = L.findMatch(S.books, { isbn });
     const sc = { isbn, phase: "looking", info: null, match: local ? local.book : null, by: local ? "isbn" : null, fresh: true };
     S.scan = sc;
+    if (S.picker && S.picker.ctx === "scan") S.picker = null;
     S.view = "scan";
     $("#toast").hidden = true;
     render();
@@ -403,6 +440,7 @@
       const { book } = await Lookup.byIsbn(isbn);
       sc.info = book;
       sc.phase = book ? "done" : "unknown";
+      if (!book && (!sc.match || isbnOnly(sc.match))) S.picker = { ctx: "scan", q: "", phase: "idle", results: [] };
       if (!sc.match && book) {
         const t = L.findMatch(S.books, book);
         if (t) { sc.match = t.book; sc.by = "title"; sc.fresh = true; }
@@ -549,6 +587,9 @@
         toast(p === "owned" ? "Marcado como tuyo" : p === "read" ? "Marcado como leído" : "Añadido a tu lista de deseos");
         break;
       }
+      case "pick-open": readSheet(); S.picker = { ctx: "sheet", q: isbnOnly(S.sheet.data) ? "" : S.sheet.data.title, phase: "idle", results: [] }; renderSheet(); setTimeout(() => $("#pickq")?.focus(), 30); break;
+      case "pick-go": S.picker.q = $("#pickq").value; $("#pickq").blur(); runPicker(); break;
+      case "pick-fill": await pickFill(S.picker.results[+t.dataset.i]); break;
       case "export-share": exportShare(); break;
       case "export-file": exportDownload(); break;
       case "import": $("#import-file").click(); break;
@@ -557,6 +598,55 @@
         break;
     }
   });
+
+  function renderPicker() {
+    if (!S.picker) return;
+    if (S.picker.ctx === "sheet") { readSheet(); renderSheet(); } else render();
+  }
+  async function runPicker() {
+    const p = S.picker;
+    const q = p.q.trim();
+    if (q.length < 2) return;
+    p.phase = "loading";
+    renderPicker();
+    try {
+      const results = await Lookup.search(q);
+      if (S.picker === p && p.q.trim() === q) { p.results = results.slice(0, 9); p.phase = "done"; }
+    } catch {
+      if (S.picker === p) p.phase = "offline";
+    }
+    if (S.picker === p) renderPicker();
+  }
+  // Applies the chosen search result to the scanned ISBN or to the open book form. The ISBN always stays
+  // the one the reader scanned or typed: search results are works, not the reader's edition.
+  async function pickFill(r) {
+    if (!r) return;
+    const p = S.picker;
+    S.picker = null;
+    const fields = { title: r.title, author: r.author, year: r.year, publisher: r.publisher, cover: r.cover };
+    if (p.ctx === "sheet" && S.sheet) {
+      readSheet();
+      Object.assign(S.sheet.data, Object.fromEntries(Object.entries(fields).filter(([, v]) => v)));
+      renderSheet();
+      toast("Datos rellenados. Revisa y guarda.");
+      return;
+    }
+    const sc = S.scan;
+    if (!sc) return;
+    if (sc.match && isbnOnly(sc.match)) {
+      await patchBook(sc.match.id, { ...fields, pending: false });
+      sc.match = S.books.find((b) => b.id === sc.match.id);
+    }
+    sc.info = { ...fields, isbn: sc.isbn };
+    sc.phase = "done";
+    if (!sc.match) {
+      const t = L.findMatch(S.books, sc.info);
+      if (t) { sc.match = t.book; sc.by = "title"; }
+    }
+    sc.fresh = true;
+    render();
+    sc.fresh = false;
+  }
 
   async function runSearch() {
     const q = S.search.q.trim();
@@ -582,7 +672,7 @@
     const isbn = d.isbn ? L.toIsbn13(d.isbn) : "";
     if (d.isbn && !isbn) { $("#s-isbn").focus(); toast("Ese ISBN no es válido. Revísalo o déjalo vacío."); return; }
     const fields = { title: d.title, author: d.author, isbn: isbn || "", year: d.year, publisher: d.publisher || "", pages: d.pages || null, cover: d.cover || "",
-      owned: d.owned, read: d.read, wish: d.wish, rating: d.rating || 0, readDate: d.readDate, notes: d.notes, pending: false };
+      owned: d.owned, read: d.read, wish: d.wish, rating: d.rating || 0, readDate: d.readDate, notes: d.notes, pending: isbnOnly(d) };
     closeSheet();
     if (sh.mode === "new") { await addBook(fields); toast("Guardado en tu estante"); }
     else { await patchBook(sh.id, fields); toast("Cambios guardados"); }
@@ -595,6 +685,7 @@
     if (id === "quick") { S.quick = ev.target.value; $("#quickres").innerHTML = quickResults(); }
     if (id === "libq") { S.q = ev.target.value; render(); }
     if (id === "netq") S.search.q = ev.target.value;
+    if (id === "pickq" && S.picker) S.picker.q = ev.target.value;
     if (["s-title", "s-author", "s-isbn"].includes(id) && S.sheet) { readSheet(); $("#dupwarn").innerHTML = dupWarning(S.sheet.data); }
   });
   document.addEventListener("change", async (ev) => {
@@ -613,6 +704,13 @@
     if (id === "import-file") { const f = ev.target.files[0]; ev.target.value = ""; if (f) importFile(f); }
   });
   document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && ev.target.id === "pickq" && S.picker) {
+      ev.preventDefault(); // inside the book form, Enter would submit it
+      S.picker.q = ev.target.value;
+      ev.target.blur();
+      runPicker();
+      return;
+    }
     if (ev.key !== "Escape") return;
     if (!$("#scanner").hidden) closeScanner(); else if (S.sheet) closeSheet();
   });

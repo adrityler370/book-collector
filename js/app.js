@@ -299,15 +299,19 @@
     else install = `<p class="note">En el menú del navegador, elige <strong>Instalar app</strong> o <strong>Añadir a pantalla de inicio</strong>.</p>`;
     const canShare = !!(navigator.canShare && window.File && navigator.canShare({ files: [new File(["{}"], "x.json", { type: "application/json" })] }));
     return `<section class="card">
-        <h2>Copia de seguridad</h2>
-        <p class="lede">Tus libros se guardan solo en este móvil. Haz una copia de vez en cuando para no perderlos si cambias de móvil o borras los datos del navegador.</p>
-        <p class="note">${S.books.length} libros · Última copia: ${last ? esc(new Date(+last).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })) : "nunca"}</p>
+        <h2>Exportar tu colección</h2>
+        <p class="lede">Tus libros se guardan solo en este dispositivo. Expórtalos a un archivo de vez en cuando para no perderlos, o para pasarlos a otro móvil o al ordenador.</p>
+        <p class="note">${S.books.length} ${S.books.length === 1 ? "libro" : "libros"} · Última exportación: ${last ? esc(new Date(+last).toLocaleDateString("es-ES", { day: "numeric", month: "long", year: "numeric" })) : "nunca"}</p>
         <div class="row">
-          ${canShare ? `<button type="button" class="btn primary" data-act="export-share">Enviar copia…</button>` : ""}
-          <button type="button" class="btn${canShare ? "" : " primary"}" data-act="export-file">Descargar copia</button>
+          ${canShare ? `<button type="button" class="btn primary" data-act="export-share">Exportar y enviar…</button>` : ""}
+          <button type="button" class="btn${canShare ? "" : " primary"}" data-act="export-file">Descargar el archivo</button>
         </div>
-        <div class="row"><button type="button" class="btn ghost" data-act="import">Cargar una copia</button></div>
-        <p class="note">Al cargar una copia se añaden los libros que faltan y se actualizan los que cambiaron; no se borra nada.</p>
+        ${canShare ? `<p class="note">«Exportar y enviar» te deja mandarlo por WhatsApp o correo, o guardarlo en Drive o en Archivos.</p>` : ""}
+      </section>
+      <section class="card flat">
+        <h3>Importar una colección</h3>
+        <p class="note">En el otro móvil o en el ordenador, abre esta misma web, entra en Exportar y elige el archivo. Se añaden los libros que faltan y se actualizan los que cambiaron; no se borra nada.</p>
+        <div class="row"><button type="button" class="btn" data-act="import">Importar un archivo</button></div>
       </section>
       <section class="card flat">
         <h3>Instalar como app</h3>

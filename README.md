@@ -24,7 +24,7 @@ Funciona en el navegador del móvil, sin cuenta y sin instalar nada de una tiend
 ## Instalarla en el móvil
 
 - **iPhone (Safari):** botón Compartir → *Añadir a pantalla de inicio*.
-- **Android (Chrome):** menú ⋮ → *Instalar app*, o desde la pestaña *Copia* de la propia app.
+- **Android (Chrome):** menú ⋮ → *Instalar app*, o desde la pestaña *Exportar* de la propia app.
 
 Instalada se abre a pantalla completa y el navegador no borra tus datos por falta de uso.
 
@@ -33,9 +33,10 @@ Instalada se abre a pantalla completa y el navegador no borra tus datos por falt
 Los libros se guardan **solo en tu móvil** (en el almacenamiento del navegador). No hay servidor ni cuenta:
 nadie más los ve, y cada persona que use la app tiene su propio estante.
 
-Por eso conviene hacer una copia de vez en cuando desde la pestaña **Copia**. El archivo `.json` se puede
-enviar por WhatsApp, guardar en Drive o en Archivos, y cargarlo en otro móvil. Al cargar una copia se
-añaden los libros que faltan y se actualizan los que cambiaron; no se borra nada.
+Por eso conviene exportarlos de vez en cuando desde la pestaña **Exportar**. El archivo `.json` se puede
+enviar por WhatsApp, guardar en Drive o en Archivos, e importarlo en otro móvil o en el ordenador (misma
+web, pestaña Exportar → *Importar un archivo*). Al importar se añaden los libros que faltan y se
+actualizan los que cambiaron; no se borra nada.
 
 Los datos de los libros (título, autor, portada) vienen de [Open Library](https://openlibrary.org) y de la
 tienda de Apple Books, ambas gratis y sin claves ni cuentas. El código de barras se lee en el propio móvil.

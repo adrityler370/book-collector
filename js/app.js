@@ -8,6 +8,7 @@
     view: "scan", filter: "all", q: "", sort: "recent", quick: "",
     scan: null,      // last scanned book: {isbn, phase: 'looking'|'done'|'unknown'|'offline', info, match, by, fresh}
     search: { q: "", phase: "idle", results: [] }, // online search on the Add screen
+    isbnEntry: null, // typed ISBN box on the scan screen: {value} while open
     picker: null,    // title search that fills in a book: {ctx: 'scan'|'sheet', q, phase: 'idle'|'loading'|'done'|'offline', results}
     sheet: null,     // book form: {mode: 'new'|'edit', id, data, armed}
     scanMode: null,  // 'check' | 'bulk' | 'fill' while the camera is open
@@ -116,7 +117,7 @@
     const active = document.activeElement && document.activeElement.id;
     const caret = active && document.activeElement.selectionStart;
     $("#view").innerHTML = S.view === "scan" ? scanView() : S.view === "library" ? libraryView() : S.view === "add" ? addView() : moreView();
-    if (active && ["quick", "libq", "netq", "pickq"].includes(active)) {
+    if (active && ["quick", "libq", "netq", "pickq", "isbnq"].includes(active)) {
       const el = document.getElementById(active);
       if (el) { el.focus(); try { el.setSelectionRange(caret, caret); } catch { /* not a text input */ } }
     }
@@ -131,6 +132,39 @@
   }
 
   const barcodeIcon = `<svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" stroke-linecap="round" aria-hidden="true"><path d="M4 8V6a2 2 0 0 1 2-2h2M16 4h2a2 2 0 0 1 2 2v2M20 16v2a2 2 0 0 1-2 2h-2M8 20H6a2 2 0 0 1-2-2v-2"/><path d="M7.5 8v8M10 8v8M12 8v8M14.5 8v8M16.5 8v8"/></svg>`;
+
+  // Typed ISBN, for books whose ISBN is printed without a barcode (old books, the copyright page).
+  function isbnHint(raw) {
+    if (!raw) return "Son 13 cifras (10 en libros antiguos). Está en la contraportada o en la página de créditos, al principio del libro.";
+    if (L.toIsbn13(raw)) return "ISBN correcto.";
+    if (raw.length === 10 || raw.length === 13) return "Ese ISBN no es válido. Revisa los números.";
+    if (raw.length > 13) return "Sobran cifras. Un ISBN tiene 13 (o 10).";
+    return `${raw.length} ${raw.length === 1 ? "cifra" : "cifras"}…`;
+  }
+  function isbnEntryHTML() {
+    const raw = L.cleanIsbn(S.isbnEntry.value);
+    return `<section class="card" id="isbncard">
+      <h3>Escribir el ISBN</h3>
+      <div class="searchbar"><input type="text" id="isbnq" inputmode="numeric" autocomplete="off" enterkeyhint="search" placeholder="978 84…" value="${esc(S.isbnEntry.value)}" aria-describedby="isbnhint" aria-label="ISBN">
+        <button type="button" class="btn primary" id="isbn-go" data-act="isbn-go"${L.toIsbn13(raw) ? "" : " disabled"}>Comprobar</button></div>
+      <p class="note" id="isbnhint">${isbnHint(raw)}</p>
+      <div class="row" id="isbnx"${/^\d{9}$/.test(raw) ? "" : " hidden"}><button type="button" class="btn small" data-act="isbn-x">Termina en X</button></div>
+      <div class="row"><button type="button" class="btn small ghost" data-act="isbn-close">Cancelar</button></div>
+    </section>`;
+  }
+  function openIsbnEntry() {
+    S.isbnEntry = { value: "" };
+    S.view = "scan";
+    render();
+    const el = $("#isbnq");
+    if (el) { el.focus(); el.scrollIntoView({ block: "center" }); }
+  }
+  function submitIsbnEntry() {
+    const isbn = S.isbnEntry && L.toIsbn13(S.isbnEntry.value);
+    if (!isbn) return;
+    S.isbnEntry = null;
+    checkIsbn(isbn);
+  }
 
   // Search box + covers to tap. Used for ISBNs nobody knows and for books saved without a title.
   function pickerHTML(label) {
@@ -152,14 +186,15 @@
   }
 
   function scanView() {
-    let html = S.scan ? scanResult(S.scan) : "";
+    let html = S.isbnEntry ? isbnEntryHTML() : "";
+    html += S.scan ? scanResult(S.scan) : "";
     html += Scanner.canUseCamera()
       ? `<button type="button" class="cam-btn" data-act="scan">${barcodeIcon}
           <span class="big">Escanear un libro</span>
           <span class="sub">Apunta al código de barras y te digo si ya lo tienes y si lo has leído</span></button>
-         <div class="row"><button type="button" class="btn small ghost" data-act="photo-code">Leer el código desde una foto</button></div>`
-      : `<div class="banner"><strong>Este navegador no deja usar la cámara en vivo.</strong> Puedes hacer una foto del código de barras.
-           <div class="row"><button type="button" class="btn primary" data-act="photo-code">Fotografiar el código</button></div></div>`;
+         <div class="row"><button type="button" class="btn" data-act="isbn-open">Escribir el ISBN</button><button type="button" class="btn ghost" data-act="photo-code">Leer el código de una foto</button></div>`
+      : `<div class="banner"><strong>Este navegador no deja usar la cámara en vivo.</strong> Puedes hacer una foto del código de barras o escribir el ISBN.
+           <div class="row"><button type="button" class="btn primary" data-act="photo-code">Fotografiar el código</button><button type="button" class="btn" data-act="isbn-open">Escribir el ISBN</button></div></div>`;
     html += `<section class="card flat">
       <label class="field" for="quick">¿Sin código de barras? Escribe el título, el autor o el ISBN</label>
       <input type="search" id="quick" placeholder="Ej.: Patria, Aramburu" value="${esc(S.quick)}" autocomplete="off" enterkeyhint="search">
@@ -394,6 +429,7 @@
     $("#bulk-log").innerHTML = "";
     $("#scan-msg").textContent = "";
     $("#torch").hidden = true;
+    $("#scan-type").hidden = mode !== "check";
     $("#scanner").hidden = false;
     try {
       await Scanner.start($("#video"), onCode);
@@ -418,7 +454,7 @@
     if (!isbn) {
       if (Date.now() - lastBadCodeAt > 2500) {
         lastBadCodeAt = Date.now();
-        $("#scan-msg").textContent = "Ese código no es un ISBN. Busca el que empieza por 978 o 979.";
+        $("#scan-msg").textContent = S.scanMode === "check" ? "Ese código no es un ISBN. Busca el que empieza por 978 o 979, o pulsa «Escribir el ISBN»." : "Ese código no es un ISBN. Busca el que empieza por 978 o 979.";
       }
       return;
     }
@@ -558,6 +594,10 @@
       case "bulk": openScanner("bulk"); break;
       case "photo-code": $("#photo-code").click(); break;
       case "check-isbn": checkIsbn(t.dataset.isbn); break;
+      case "isbn-open": openIsbnEntry(); break;
+      case "isbn-go": submitIsbnEntry(); break;
+      case "isbn-close": S.isbnEntry = null; render(); break;
+      case "isbn-x": { const el = $("#isbnq"); el.value += "X"; el.dispatchEvent(new Event("input", { bubbles: true })); el.focus(); break; }
       case "net-search": S.search.q = S.quick.trim(); S.view = "add"; runSearch(); break;
       case "filter": S.filter = t.dataset.f; render(); break;
       case "open": { const b = S.books.find((x) => x.id === t.dataset.id); if (b) openSheet("edit", { ...b }, b.id); break; }
@@ -690,6 +730,14 @@
     if (id === "libq") { S.q = ev.target.value; render(); }
     if (id === "netq") S.search.q = ev.target.value;
     if (id === "pickq" && S.picker) S.picker.q = ev.target.value;
+    if (id === "isbnq" && S.isbnEntry) {
+      S.isbnEntry.value = ev.target.value;
+      const raw = L.cleanIsbn(ev.target.value);
+      $("#isbnhint").textContent = isbnHint(raw);
+      $("#isbn-go").disabled = !L.toIsbn13(raw);
+      $("#isbnx").hidden = !/^\d{9}$/.test(raw);
+      if (raw.length === 13 && L.toIsbn13(raw)) { ev.target.blur(); submitIsbnEntry(); }
+    }
     if (["s-title", "s-author", "s-isbn"].includes(id) && S.sheet) { readSheet(); $("#dupwarn").innerHTML = dupWarning(S.sheet.data); }
   });
   document.addEventListener("change", async (ev) => {
@@ -708,6 +756,7 @@
     if (id === "import-file") { const f = ev.target.files[0]; ev.target.value = ""; if (f) importFile(f); }
   });
   document.addEventListener("keydown", (ev) => {
+    if (ev.key === "Enter" && ev.target.id === "isbnq") { ev.preventDefault(); submitIsbnEntry(); return; }
     if (ev.key === "Enter" && ev.target.id === "pickq" && S.picker) {
       ev.preventDefault(); // inside the book form, Enter would submit it
       S.picker.q = ev.target.value;
@@ -719,6 +768,11 @@
     if (!$("#scanner").hidden) closeScanner(); else if (S.sheet) closeSheet();
   });
   $("#scan-close").addEventListener("click", closeScanner);
+  $("#scan-type").addEventListener("click", () => {
+    $("#scanner").hidden = true;
+    openIsbnEntry(); // focus inside the tap itself, or phones do not open the keyboard
+    closeScanner();
+  });
   let torchOn = false;
   $("#torch").addEventListener("click", async () => {
     torchOn = !torchOn;

@@ -89,7 +89,7 @@ h3 { font-size: 1rem; margin: 0; }
 /* Cover: a coloured spine, with the real cover on top when it loads */
 .cv { position: relative; display: block; width: 44px; height: 64px; border-radius: 3px; overflow: hidden; flex: none; }
 .cv.big { width: 92px; height: 138px; border-radius: 4px; }
-.cv img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; background: var(--card); }
+.cv img { position: absolute; inset: 0; width: 100%; height: 100%; object-fit: cover; } /* the spine shows until the cover loads */
 .spine { width: 100%; height: 100%; display: grid; place-items: center; color: #fff; font-family: var(--f-display); font-size: 1.05rem; box-shadow: inset 3px 0 0 rgba(255,255,255,.18), inset -2px 0 0 rgba(0,0,0,.15); }
 .cv.big .spine { font-size: 1.8rem; }
 
@@ -173,7 +173,7 @@ textarea { min-height: 80px; resize: vertical; }
 .scan-title { font-family: var(--f-display); font-size: 1.3rem; }
 .scan-hint { font-size: .88rem; opacity: .85; }
 .scan-msg { min-height: 1.4em; font-weight: 700; text-shadow: 0 1px 3px rgba(0,0,0,.6); }
-.scan-actions { display: flex; gap: 10px; justify-content: center; }
+.scan-actions { display: flex; flex-wrap: wrap; gap: 10px; justify-content: center; }
 .scan-btn { min-width: 130px; background: rgba(255,255,255,.12); color: #fff; border-color: rgba(255,255,255,.4); }
 .scan-btn.primary { background: #fff; color: #111; border-color: #fff; }
 .bulk-toggle { display: inline-flex; align-items: center; gap: 8px; justify-content: center; font-weight: 700; }

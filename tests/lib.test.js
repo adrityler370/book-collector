@@ -47,14 +47,13 @@ test("findMatch rejects same title by a different author and short partial title
   assert.equal(L.findMatch(library, { title: "" }), null);
 });
 
-test("fromGoogle maps a volume and forces https covers", () => {
-  const b = L.fromGoogle({
-    title: "Patria", authors: ["Fernando Aramburu"], publishedDate: "2016-09-06", publisher: "Tusquets",
-    pageCount: 648, imageLinks: { thumbnail: "http://books.google.com/x?id=1&edge=curl" },
-    industryIdentifiers: [{ type: "ISBN_10", identifier: "0306406152" }],
+test("fromApple maps an ebook result and asks for a bigger cover", () => {
+  const b = L.fromApple({
+    trackName: "Los Huérfanos", artistName: "Carmen Mola", releaseDate: "2026-09-09T07:00:00Z",
+    artworkUrl100: "https://is1-ssl.mzstatic.com/image/thumb/P/v4/x/9788408324768.jpg/100x100bb.jpg",
   });
-  assert.deepEqual(b, { title: "Patria", author: "Fernando Aramburu", year: "2016", publisher: "Tusquets", pages: 648, cover: "https://books.google.com/x?id=1", isbn: "9780306406157" });
-  assert.equal(L.fromGoogle({}), null);
+  assert.deepEqual(b, { title: "Los Huérfanos", author: "Carmen Mola", year: "2026", publisher: "", pages: null, cover: "https://is1-ssl.mzstatic.com/image/thumb/P/v4/x/9788408324768.jpg/400x600bb.jpg", isbn: "" });
+  assert.equal(L.fromApple({}), null);
 });
 
 test("fromOpenLibrary and fromOpenLibrarySearch map their shapes", () => {
@@ -62,8 +61,25 @@ test("fromOpenLibrary and fromOpenLibrarySearch map their shapes", () => {
   assert.equal(e.author, "Fernando Aramburu");
   assert.equal(e.year, "2016");
   const s = L.fromOpenLibrarySearch({ title: "Patria", author_name: ["Fernando Aramburu"], first_publish_year: 2016, isbn: ["bad", "0306406152"], cover_i: 42 });
-  assert.equal(s.isbn, "9780306406157");
+  assert.equal(s.isbn, ""); // a work's ISBNs belong to other editions
   assert.equal(s.cover, "https://covers.openlibrary.org/b/id/42-M.jpg");
+});
+
+test("mergeResults interleaves sources, drops repeats and fills their gaps", () => {
+  const ol = [
+    { title: "Patria", author: "Fernando Aramburu", year: "2016", cover: "" },
+    { title: "Patria y vida", author: "Otro Autor", year: "2020", cover: "ol2" },
+  ];
+  const apple = [
+    { title: "PATRIA", author: "Aramburu, Fernando", year: "", cover: "apple1" },
+    { title: "Los vencejos", author: "Fernando Aramburu", year: "2021", cover: "apple2" },
+  ];
+  const r = L.mergeResults([apple, ol]);
+  assert.deepEqual(r.map((x) => x.title), ["PATRIA", "Los vencejos", "Patria y vida"]);
+  assert.equal(r[0].year, "2016"); // gap filled from the Open Library copy
+  assert.equal(r[0].cover, "apple1");
+  assert.equal(L.mergeResults([apple, ol], 2).length, 2);
+  assert.deepEqual(L.mergeResults([[], []]), []);
 });
 
 test("sanitizeBook drops junk, keeps known fields and reads the artifact's thumb", () => {

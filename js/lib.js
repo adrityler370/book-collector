@@ -93,21 +93,18 @@
     return url ? String(url).replace(/^http:/, "https:") : "";
   }
 
-  // Google Books volumeInfo -> book fields.
-  function fromGoogle(v) {
-    if (!v || !v.title) return null;
-    const ids = v.industryIdentifiers || [];
-    const id13 = ids.find((i) => i.type === "ISBN_13");
-    const id10 = ids.find((i) => i.type === "ISBN_10");
-    const links = v.imageLinks || {};
+  // Apple Books search result (itunes.apple.com/search, ebooks) -> book fields. Its ISBNs are the ebook's,
+  // never the paper edition's, so none is taken.
+  function fromApple(r) {
+    if (!r || !r.trackName) return null;
     return {
-      title: v.subtitle ? `${v.title}: ${v.subtitle}` : v.title,
-      author: (v.authors || []).join(", "),
-      year: yearOf(v.publishedDate),
-      publisher: v.publisher || "",
-      pages: v.pageCount || null,
-      cover: https(links.thumbnail || links.smallThumbnail).replace("&edge=curl", ""),
-      isbn: toIsbn13(id13 ? id13.identifier : id10 ? id10.identifier : "") || "",
+      title: r.trackName,
+      author: r.artistName || "",
+      year: yearOf(r.releaseDate),
+      publisher: "",
+      pages: null,
+      cover: https(r.artworkUrl100 || "").replace(/\/\d+x\d+bb\.(jpg|png)$/, "/400x600bb.$1"),
+      isbn: "",
     };
   }
 
@@ -125,10 +122,10 @@
     };
   }
 
-  // Open Library search.json doc -> book fields (for title search).
+  // Open Library search.json doc -> book fields (for title search). A search hit is a work with many
+  // editions, so its ISBNs say nothing about the reader's copy and none is taken.
   function fromOpenLibrarySearch(d) {
     if (!d || !d.title) return null;
-    const isbn = (d.isbn || []).map(toIsbn13).find(Boolean) || "";
     return {
       title: d.subtitle ? `${d.title}: ${d.subtitle}` : d.title,
       author: (d.author_name || []).join(", "),
@@ -136,8 +133,34 @@
       publisher: (d.publisher || [])[0] || "",
       pages: d.number_of_pages_median || null,
       cover: d.cover_i ? `https://covers.openlibrary.org/b/id/${d.cover_i}-M.jpg` : "",
-      isbn,
+      isbn: "",
     };
+  }
+
+  // Combines ranked result lists from several sources: takes them in turns (1st of each, then 2nd...),
+  // drops repeats of the same work (same title, a shared author word) and fills the kept copy's gaps.
+  function mergeResults(lists, max = 16) {
+    const out = [];
+    const longest = Math.max(0, ...lists.map((l) => l.length));
+    for (let i = 0; i < longest; i++) {
+      for (const list of lists) {
+        const r = list[i];
+        if (!r) continue;
+        const k = titleKey(r.title);
+        const au = authorWords(r.author);
+        const kept = out.find((x) => {
+          if (titleKey(x.title) !== k) return false;
+          const xa = authorWords(x.author);
+          return !au.length || !xa.length || au.some((w) => xa.includes(w));
+        });
+        if (kept) {
+          for (const f of Object.keys(r)) if (!kept[f] && r[f]) kept[f] = r[f];
+        } else {
+          out.push({ ...r });
+        }
+      }
+    }
+    return out.slice(0, max);
   }
 
   const BOOK_FIELDS = ["title", "author", "isbn", "year", "publisher", "pages", "cover", "owned", "read", "wish", "rating", "readDate", "notes", "pending", "createdAt", "updatedAt"];
@@ -182,7 +205,7 @@
     return { books, added, updated };
   }
 
-  const lib = { cleanIsbn, isValidIsbn13, isValidIsbn10, toIsbn13, norm, titleKey, authorWords, findMatch, fromGoogle, fromOpenLibrary, fromOpenLibrarySearch, sanitizeBook, mergeBooks };
+  const lib = { cleanIsbn, isValidIsbn13, isValidIsbn10, toIsbn13, norm, titleKey, authorWords, findMatch, fromApple, fromOpenLibrary, fromOpenLibrarySearch, mergeResults, sanitizeBook, mergeBooks };
   if (typeof module !== "undefined" && module.exports) module.exports = lib;
   else root.BookLib = lib;
 })(this);
